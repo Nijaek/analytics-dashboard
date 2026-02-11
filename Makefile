@@ -1,4 +1,4 @@
-.PHONY: help dev prod down logs test test-backend test-frontend lint format migrate migration shell seed
+.PHONY: help dev prod down logs test test-backend test-frontend lint format migrate migration shell seed loadtest
 
 help:
 	@echo "Available commands:"
@@ -55,3 +55,6 @@ shell:
 
 seed:
 	cd backend && python -m scripts.seed_events
+
+loadtest:
+	cd backend && locust -f tests/locustfile.py --host http://localhost:8000

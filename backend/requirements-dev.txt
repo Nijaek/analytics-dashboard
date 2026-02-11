@@ -7,3 +7,4 @@ fakeredis==2.21.0
 ruff==0.4.4
 pre-commit==3.7.0
 mypy==1.10.0
+locust==2.29.0

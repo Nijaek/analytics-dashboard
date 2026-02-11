@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { getToken, isAuthenticated } from "@/lib/auth";
+import { MetricCard } from "@/components/dashboard";
 
 export default function DashboardPage() {
   const params = useParams();
@@ -150,16 +151,5 @@ export default function DashboardPage() {
         </div>
       </div>
     </main>
-  );
-}
-
-function MetricCard({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="border rounded-lg p-4 bg-white">
-      <p className="text-sm text-gray-500">{label}</p>
-      <p className="text-2xl font-bold mt-1">
-        {typeof value === "number" ? value.toLocaleString() : value}
-      </p>
-    </div>
   );
 }
