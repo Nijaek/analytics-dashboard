@@ -35,17 +35,19 @@ async def ingest_events(
     # Build event data for the entire batch
     events_data = []
     for event_in in data.events:
-        events_data.append({
-            "event": event_in.event,
-            "distinct_id": event_in.distinct_id,
-            "properties": event_in.properties,
-            "session_id": event_in.session_id,
-            "page_url": event_in.page_url,
-            "referrer": event_in.referrer,
-            "user_agent": user_agent,
-            "ip_hash": ip_hash,
-            "timestamp": (event_in.timestamp or datetime.now(timezone.utc)).isoformat(),
-        })
+        events_data.append(
+            {
+                "event": event_in.event,
+                "distinct_id": event_in.distinct_id,
+                "properties": event_in.properties,
+                "session_id": event_in.session_id,
+                "page_url": event_in.page_url,
+                "referrer": event_in.referrer,
+                "user_agent": user_agent,
+                "ip_hash": ip_hash,
+                "timestamp": (event_in.timestamp or datetime.now(timezone.utc)).isoformat(),
+            }
+        )
 
     # Try atomic Redis pipeline — all-or-nothing
     msg_ids = await push_event_batch_to_stream(project.id, events_data)

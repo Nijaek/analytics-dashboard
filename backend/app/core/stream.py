@@ -58,9 +58,9 @@ async def push_event_batch_to_stream(
                 "project_id": str(project_id),
                 "data": json.dumps(event_data, default=str),
             }
-            pipe.xadd(STREAM_KEY, payload)
+            pipe.xadd(STREAM_KEY, payload)  # type: ignore[arg-type]
         results = await pipe.execute()
-        return results
+        return results  # type: ignore[no-any-return]
     except (RedisError, Exception) as exc:
         logger.warning("Pipeline XADD to %s failed: %s", STREAM_KEY, exc)
         return None

@@ -115,7 +115,9 @@ class AnalyticsService:
 
         return [
             TimeseriesPoint(
-                timestamp=row[0] if isinstance(row[0], datetime) else datetime.fromisoformat(row[0]),
+                timestamp=row[0]
+                if isinstance(row[0], datetime)
+                else datetime.fromisoformat(row[0]),
                 count=row[1],
             )
             for row in rows
