@@ -312,4 +312,4 @@ make loadtest
 
 ## License
 
-MIT
+[MIT](LICENSE) - Nijae King
