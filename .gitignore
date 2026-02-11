@@ -6,7 +6,7 @@ __pycache__/
 venv/
 .venv/
 *.egg-info/
-dist/
+/dist/
 build/
 
 # Node
@@ -51,8 +51,7 @@ Thumbs.db
 # Ruff
 .ruff_cache/
 
-# SDK build output
-sdk/dist/
+# SDK build output (sdk/dist/ is committed — backend serves it as static files)
 
 # uv
 uv.lock
