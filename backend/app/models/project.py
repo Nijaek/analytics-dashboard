@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 import secrets
+from typing import TYPE_CHECKING
 
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.base import TimestampMixin
+
+if TYPE_CHECKING:
+    from app.models.event import Event
 
 
 class Project(Base, TimestampMixin):
@@ -19,7 +25,7 @@ class Project(Base, TimestampMixin):
     domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
-    events: Mapped[list["Event"]] = relationship(  # noqa: F821
+    events: Mapped[list[Event]] = relationship(
         "Event", back_populates="project", cascade="all, delete-orphan"
     )
 

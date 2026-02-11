@@ -30,7 +30,7 @@ async def push_event_to_stream(
             "project_id": str(project_id),
             "data": json.dumps(event_data, default=str),
         }
-        msg_id: str = await r.xadd(STREAM_KEY, payload)
+        msg_id: str = await r.xadd(STREAM_KEY, payload)  # type: ignore[arg-type]
         return msg_id
     except (RedisError, Exception) as exc:
         logger.warning("XADD to %s failed: %s", STREAM_KEY, exc)
@@ -85,7 +85,7 @@ async def ack_messages(message_ids: list[str]) -> int:
         return 0
     try:
         r = await get_redis()
-        return await r.xack(STREAM_KEY, GROUP_NAME, *message_ids)
+        return int(await r.xack(STREAM_KEY, GROUP_NAME, *message_ids))
     except (RedisError, Exception) as exc:
         logger.warning("XACK failed: %s", exc)
         return 0

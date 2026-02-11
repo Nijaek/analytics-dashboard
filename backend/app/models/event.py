@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -7,6 +9,9 @@ from sqlalchemy.types import JSON
 
 from app.db.base import Base
 from app.models.base import TimestampMixin
+
+if TYPE_CHECKING:
+    from app.models.project import Project
 
 
 class Event(Base, TimestampMixin):
@@ -31,7 +36,7 @@ class Event(Base, TimestampMixin):
     )
 
     # Relationships
-    project: Mapped["Project"] = relationship("Project", back_populates="events")  # noqa: F821
+    project: Mapped[Project] = relationship("Project", back_populates="events")
 
 
 class EventRollupHourly(Base):

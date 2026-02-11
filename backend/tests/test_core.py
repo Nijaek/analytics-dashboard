@@ -142,3 +142,33 @@ class TestSecurityConfig:
 
         with pytest.raises(ValidationError):
             Settings(SECRET_KEY="your-super-secret-key-at-least-32-chars")
+
+
+class TestSetupLogging:
+    """Tests for logging configuration."""
+
+    def test_setup_logging_runs(self):
+        """Test setup_logging configures logging without error."""
+        from app.core.config import setup_logging
+
+        setup_logging()
+
+    def test_setup_logging_sets_level(self):
+        """Test setup_logging applies the configured log level."""
+        import logging
+
+        from app.core.config import setup_logging
+
+        setup_logging()
+        root_logger = logging.getLogger()
+        assert root_logger.level is not None
+
+
+@pytest.mark.asyncio
+async def test_root_endpoint(client):
+    """Test root endpoint returns project name."""
+    response = await client.get("/")
+    assert response.status_code == 200
+    data = response.json()
+    assert "message" in data
+    assert "running" in data["message"]

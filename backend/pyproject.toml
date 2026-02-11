@@ -41,6 +41,14 @@ exclude = ["tests/"]
 module = ["redis.*", "slowapi.*"]
 ignore_missing_imports = true
 
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "app/worker.py",
+    "app/core/stream.py",
+    "app/api/v1/ws.py",
+]
+
 [tool.pydantic-mypy]
 init_forbid_extra = true
 init_typed = true

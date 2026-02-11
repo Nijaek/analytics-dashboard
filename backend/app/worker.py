@@ -140,7 +140,7 @@ async def _compute_rollups(session_factory: async_sessionmaker[AsyncSession]) ->
             rollup = existing.scalar_one_or_none()
 
             if rollup:
-                rollup.count = row.count
+                rollup.count = row.count  # type: ignore[assignment]
                 rollup.unique_sessions = row.unique_sessions
                 rollup.unique_users = row.unique_users
             else:
