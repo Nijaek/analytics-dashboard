@@ -312,4 +312,4 @@ make loadtest
 
 ## License
 
-[MIT](LICENSE) - Nijae King
+[MIT](LICENSE)
