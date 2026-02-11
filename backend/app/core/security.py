@@ -198,6 +198,43 @@ async def revoke_token(jti: str) -> None:
         logger.warning(f"Failed to revoke token {jti}: {e}")
 
 
+# --- Account lockout ---
+
+LOCKOUT_PREFIX = "login_failures:"
+MAX_LOGIN_FAILURES = 5
+LOCKOUT_SECONDS = 15 * 60  # 15 minutes
+
+
+async def check_account_locked(email: str) -> bool:
+    """Check if an account is locked due to too many failed login attempts."""
+    key = f"{LOCKOUT_PREFIX}{email}"
+    try:
+        r = await get_redis()
+        failures = await r.get(key)
+        return failures is not None and int(failures) >= MAX_LOGIN_FAILURES
+    except (RedisError, Exception):
+        return False  # Fail-open: don't lock out if Redis is down
+
+
+async def record_failed_login(email: str) -> None:
+    """Increment failed login counter with TTL."""
+    key = f"{LOCKOUT_PREFIX}{email}"
+    try:
+        r = await get_redis()
+        pipe = r.pipeline()
+        pipe.incr(key)
+        pipe.expire(key, LOCKOUT_SECONDS)
+        await pipe.execute()
+    except (RedisError, Exception) as exc:
+        logger.warning("Failed to record login failure for %s: %s", email, exc)
+
+
+async def clear_failed_logins(email: str) -> None:
+    """Reset failed login counter on successful login."""
+    key = f"{LOCKOUT_PREFIX}{email}"
+    await safe_redis_delete(key)
+
+
 async def revoke_all_user_tokens(user_id: int) -> None:
     """Revoke all tokens (access and refresh) for a user (e.g., on password change).
 

@@ -163,3 +163,57 @@ async def test_get_nonexistent_project(client: AsyncClient, auth_headers: dict):
     """Test getting a project that doesn't exist."""
     response = await client.get("/api/v1/projects/99999", headers=auth_headers)
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_nonexistent_project(client: AsyncClient, auth_headers: dict):
+    """Test updating a project that doesn't exist returns 404."""
+    response = await client.patch(
+        "/api/v1/projects/99999",
+        headers=auth_headers,
+        json={"name": "Ghost"},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_nonexistent_project(client: AsyncClient, auth_headers: dict):
+    """Test deleting a project that doesn't exist returns 404."""
+    response = await client.delete("/api/v1/projects/99999", headers=auth_headers)
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_other_users_project(
+    client: AsyncClient, auth_headers: dict, superuser: User, superuser_headers: dict
+):
+    """Test that a user cannot update another user's project."""
+    create_resp = await client.post(
+        "/api/v1/projects/",
+        headers=superuser_headers,
+        json={"name": "Admin Only"},
+    )
+    project_id = create_resp.json()["id"]
+
+    response = await client.patch(
+        f"/api/v1/projects/{project_id}",
+        headers=auth_headers,
+        json={"name": "Hacked"},
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delete_other_users_project(
+    client: AsyncClient, auth_headers: dict, superuser: User, superuser_headers: dict
+):
+    """Test that a user cannot delete another user's project."""
+    create_resp = await client.post(
+        "/api/v1/projects/",
+        headers=superuser_headers,
+        json={"name": "Admin Protected"},
+    )
+    project_id = create_resp.json()["id"]
+
+    response = await client.delete(f"/api/v1/projects/{project_id}", headers=auth_headers)
+    assert response.status_code == 403

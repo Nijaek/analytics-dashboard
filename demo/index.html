@@ -68,7 +68,7 @@
             if (!apiKey) { alert("Enter an API key first"); return; }
 
             var script = document.createElement("script");
-            script.src = apiUrl + "/static/sdk.js";
+            script.src = apiUrl + "/static/sdk/sdk.js";
             script.setAttribute("data-project", apiKey);
             script.setAttribute("data-api-url", apiUrl);
             script.onload = function() {

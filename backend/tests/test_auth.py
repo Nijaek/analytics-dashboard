@@ -134,12 +134,15 @@ async def test_logout(client: AsyncClient):
         "/api/v1/auth/login",
         json={"email": "logout@example.com", "password": "TestPassword123!"},
     )
-    refresh_token = login_response.json()["refresh_token"]
+    tokens = login_response.json()
+    access_token = tokens["access_token"]
+    refresh_token = tokens["refresh_token"]
 
-    # Logout
+    # Logout (requires Bearer auth)
     response = await client.post(
         "/api/v1/auth/logout",
         json={"refresh_token": refresh_token},
+        headers={"Authorization": f"Bearer {access_token}"},
     )
     assert response.status_code == 200
 
@@ -295,11 +298,22 @@ async def test_refresh_with_access_token(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_logout_with_invalid_token(client: AsyncClient):
-    """Test logout fails with invalid token."""
+async def test_logout_without_auth(client: AsyncClient):
+    """Test logout fails without Bearer token."""
+    response = await client.post(
+        "/api/v1/auth/logout",
+        json={"refresh_token": "some-token"},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_with_invalid_token(client: AsyncClient, auth_headers: dict):
+    """Test logout fails with invalid refresh token."""
     response = await client.post(
         "/api/v1/auth/logout",
         json={"refresh_token": "invalid-token"},
+        headers=auth_headers,
     )
     assert response.status_code == 401
 
@@ -318,10 +332,11 @@ async def test_logout_with_access_token(client: AsyncClient):
     )
     access_token = login_response.json()["access_token"]
 
-    # Try to logout with access token (should fail)
+    # Try to logout with access token as refresh_token (should fail)
     response = await client.post(
         "/api/v1/auth/logout",
         json={"refresh_token": access_token},
+        headers={"Authorization": f"Bearer {access_token}"},
     )
     assert response.status_code == 401
 
@@ -381,10 +396,11 @@ async def test_access_token_revoked_after_logout(client: AsyncClient):
     )
     assert response.status_code == 200
 
-    # Logout
+    # Logout (with auth)
     await client.post(
         "/api/v1/auth/logout",
         json={"refresh_token": refresh_token},
+        headers={"Authorization": f"Bearer {access_token}"},
     )
 
     # Verify access token no longer works

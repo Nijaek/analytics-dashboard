@@ -1,9 +1,11 @@
 import hashlib
+import hmac
 import logging
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.event import Event
 from app.schemas.event import EventIn
 
@@ -18,8 +20,15 @@ class EventService:
 
     @staticmethod
     def hash_ip(ip: str) -> str:
-        """Hash an IP address with SHA-256 for privacy."""
-        return hashlib.sha256(ip.encode()).hexdigest()
+        """Hash an IP address with HMAC-SHA256 using a daily-rotating key.
+
+        The key is derived from SECRET_KEY + current UTC date, so hashes
+        naturally rotate every 24 hours, preventing long-term tracking
+        while still allowing same-day deduplication.
+        """
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        key = f"{settings.SECRET_KEY}:{today}".encode()
+        return hmac.new(key, ip.encode(), hashlib.sha256).hexdigest()
 
     async def ingest_batch(
         self,

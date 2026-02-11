@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_project_by_api_key
-from app.core.stream import push_event_to_stream
+from app.core.stream import push_event_batch_to_stream
 from app.db.session import get_db
 from app.models.project import Project
 from app.schemas.event import EventIngestRequest, EventIngestResponse
@@ -32,12 +32,10 @@ async def ingest_events(
     user_agent = request.headers.get("user-agent")
     ip_hash = EventService.hash_ip(ip_address) if ip_address else None
 
-    # Try Redis stream path first
-    stream_count = 0
-    fallback_needed = False
-
+    # Build event data for the entire batch
+    events_data = []
     for event_in in data.events:
-        event_data = {
+        events_data.append({
             "event": event_in.event,
             "distinct_id": event_in.distinct_id,
             "properties": event_in.properties,
@@ -47,25 +45,20 @@ async def ingest_events(
             "user_agent": user_agent,
             "ip_hash": ip_hash,
             "timestamp": (event_in.timestamp or datetime.now(timezone.utc)).isoformat(),
-        }
-        msg_id = await push_event_to_stream(project.id, event_data)
-        if msg_id is not None:
-            stream_count += 1
-        else:
-            # Redis unavailable — switch to direct DB fallback for entire batch
-            fallback_needed = True
-            break
+        })
 
-    if fallback_needed:
-        # Fall back to direct Postgres writes (original path)
-        logger.info("Redis stream unavailable, falling back to direct DB writes")
-        service = EventService(db)
-        count = await service.ingest_batch(
-            project_id=project.id,
-            events=data.events,
-            ip_address=ip_address,
-            user_agent=user_agent,
-        )
-        return EventIngestResponse(accepted=count)
+    # Try atomic Redis pipeline — all-or-nothing
+    msg_ids = await push_event_batch_to_stream(project.id, events_data)
+    if msg_ids is not None:
+        return EventIngestResponse(accepted=len(msg_ids))
 
-    return EventIngestResponse(accepted=stream_count)
+    # Pipeline failed entirely — safe to fall back to Postgres (no duplicates)
+    logger.info("Redis stream unavailable, falling back to direct DB writes")
+    service = EventService(db)
+    count = await service.ingest_batch(
+        project_id=project.id,
+        events=data.events,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+    return EventIngestResponse(accepted=count)

@@ -55,3 +55,8 @@ Thumbs.db
 
 # uv
 uv.lock
+
+# Beads issue tracking (local only)
+.beads/
+AGENTS.md
+CLAUDE.md

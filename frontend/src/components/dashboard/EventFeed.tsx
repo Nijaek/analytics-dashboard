@@ -21,8 +21,8 @@ export function EventFeed({ projectId, token }: { projectId: number; token: stri
         <p className="text-gray-400 text-sm">Waiting for events...</p>
       ) : (
         <ul className="space-y-2 max-h-96 overflow-y-auto">
-          {events.map((evt, i) => (
-            <li key={i} className="text-sm border-b pb-2 last:border-0">
+          {events.map((evt) => (
+            <li key={evt.id} className="text-sm border-b pb-2 last:border-0">
               <div className="flex items-center justify-between">
                 <span className="font-mono font-medium">{evt.event_name}</span>
                 <span className="text-gray-400 text-xs">

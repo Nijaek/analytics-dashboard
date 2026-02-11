@@ -1,5 +1,4 @@
 import logging
-from collections import defaultdict
 from datetime import datetime
 
 from sqlalchemy import distinct, func, select
@@ -86,30 +85,41 @@ class AnalyticsService:
         end: datetime,
         granularity: str = "hourly",
     ) -> list[TimeseriesPoint]:
-        """Get event counts over time."""
+        """Get event counts over time using SQL-native aggregation."""
+        # Detect dialect from the actual connection, not settings
+        bind = self.db.get_bind()
+        is_sqlite = bind.dialect.name == "sqlite"
+
+        if is_sqlite:
+            # SQLite: use strftime for truncation
+            if granularity == "daily":
+                trunc_expr = func.strftime("%Y-%m-%d 00:00:00", Event.timestamp)
+            else:
+                trunc_expr = func.strftime("%Y-%m-%d %H:00:00", Event.timestamp)
+        else:
+            # PostgreSQL: use date_trunc
+            trunc_unit = "day" if granularity == "daily" else "hour"
+            trunc_expr = func.date_trunc(trunc_unit, Event.timestamp)
+
         result = await self.db.execute(
-            select(Event.timestamp, func.count().label("cnt"))
+            select(trunc_expr.label("bucket"), func.count().label("cnt"))
             .where(
                 Event.project_id == project_id,
                 Event.timestamp >= start,
                 Event.timestamp <= end,
             )
-            .group_by(Event.timestamp)
-            .order_by(Event.timestamp)
+            .group_by(trunc_expr)
+            .order_by(trunc_expr)
         )
         rows = result.all()
 
-        # Aggregate by hour or day in Python for SQLite test compatibility
-        buckets: dict[datetime, int] = defaultdict(int)
-        for row in rows:
-            ts = row[0]
-            if granularity == "daily":
-                key = ts.replace(hour=0, minute=0, second=0, microsecond=0)
-            else:
-                key = ts.replace(minute=0, second=0, microsecond=0)
-            buckets[key] += row[1]
-
-        return [TimeseriesPoint(timestamp=k, count=v) for k, v in sorted(buckets.items())]
+        return [
+            TimeseriesPoint(
+                timestamp=row[0] if isinstance(row[0], datetime) else datetime.fromisoformat(row[0]),
+                count=row[1],
+            )
+            for row in rows
+        ]
 
     async def get_top_events(
         self, project_id: int, start: datetime, end: datetime, limit: int = 10

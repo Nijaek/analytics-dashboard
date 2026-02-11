@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -37,6 +37,12 @@ class Event(Base, TimestampMixin):
 
     # Relationships
     project: Mapped[Project] = relationship("Project", back_populates="events")
+
+    __table_args__ = (
+        Index("ix_events_project_timestamp", "project_id", "timestamp"),
+        Index("ix_events_project_event_timestamp", "project_id", "event_name", "timestamp"),
+        Index("ix_events_project_session", "project_id", "session_id"),
+    )
 
 
 class EventRollupHourly(Base):

@@ -5,7 +5,7 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://postgres:devpassword@db:5432/analytics}
-      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production-min32chars}
+      - SECRET_KEY=${SECRET_KEY:-local-dev-unsafe-secret-key-min-32-chars-ok}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - DEBUG=${DEBUG:-true}
       - CORS_ORIGINS=["http://localhost:3000"]

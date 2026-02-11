@@ -37,6 +37,35 @@ async def push_event_to_stream(
         return None
 
 
+async def push_event_batch_to_stream(
+    project_id: int,
+    events_data: list[dict[str, Any]],
+) -> list[str] | None:
+    """Atomically XADD a batch of events using a Redis pipeline.
+
+    Returns list of stream message IDs on success, or None if Redis
+    is unavailable. Because a pipeline is all-or-nothing at the network
+    level, a failure means NO events are in the stream, making a
+    Postgres fallback safe with no duplicates.
+    """
+    if not events_data:
+        return []
+    try:
+        r = await get_redis()
+        pipe = r.pipeline(transaction=False)
+        for event_data in events_data:
+            payload = {
+                "project_id": str(project_id),
+                "data": json.dumps(event_data, default=str),
+            }
+            pipe.xadd(STREAM_KEY, payload)
+        results = await pipe.execute()
+        return results
+    except (RedisError, Exception) as exc:
+        logger.warning("Pipeline XADD to %s failed: %s", STREAM_KEY, exc)
+        return None
+
+
 async def ensure_consumer_group() -> None:
     """Create the consumer group if it doesn't already exist."""
     try:

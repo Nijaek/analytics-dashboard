@@ -8,10 +8,13 @@ from app.core.config import settings
 from app.core.exceptions import ConflictError, UnauthorizedError
 from app.core.limiter import limiter
 from app.core.security import (
+    check_account_locked,
+    clear_failed_logins,
     create_access_token,
     create_refresh_token,
     decode_token,
     is_token_revoked,
+    record_failed_login,
     revoke_all_user_access_tokens,
     revoke_token,
     store_access_token,
@@ -49,7 +52,7 @@ def _get_refresh_token_ttl_seconds() -> int:
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+@limiter.limit("5/minute")
 async def register(
     request: Request,
     data: RegisterRequest,
@@ -66,88 +69,72 @@ async def register(
     return user
 
 
+async def _perform_login(user: User) -> Token:
+    """Create and store access + refresh tokens for an authenticated user."""
+    if not user.is_active:
+        raise UnauthorizedError("User is inactive")
+
+    access_token, access_jti = create_access_token(user.id)
+    refresh_token, refresh_jti = create_refresh_token(user.id)
+
+    await store_access_token(
+        user_id=user.id,
+        jti=access_jti,
+        expires_in_seconds=_get_access_token_ttl_seconds(),
+    )
+    await store_refresh_token(
+        user_id=user.id,
+        jti=refresh_jti,
+        expires_in_seconds=_get_refresh_token_ttl_seconds(),
+    )
+
+    return Token(access_token=access_token, refresh_token=refresh_token)
+
+
 @router.post("/login", response_model=Token)
-@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+@limiter.limit("10/minute")
 async def login(
     request: Request,
     data: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ):
     """Login and get access + refresh tokens."""
-    service = UserService(db)
+    if await check_account_locked(data.email):
+        raise UnauthorizedError("Account temporarily locked. Try again in 15 minutes.")
 
+    service = UserService(db)
     user = await service.authenticate(data.email, data.password)
     if not user:
+        await record_failed_login(data.email)
         raise UnauthorizedError("Invalid email or password")
 
-    if not user.is_active:
-        raise UnauthorizedError("User is inactive")
-
-    access_token, access_jti = create_access_token(user.id)
-    refresh_token, refresh_jti = create_refresh_token(user.id)
-
-    # Store access token in Redis
-    await store_access_token(
-        user_id=user.id,
-        jti=access_jti,
-        expires_in_seconds=_get_access_token_ttl_seconds(),
-    )
-
-    # Store refresh token in Redis
-    await store_refresh_token(
-        user_id=user.id,
-        jti=refresh_jti,
-        expires_in_seconds=_get_refresh_token_ttl_seconds(),
-    )
-
-    return Token(
-        access_token=access_token,
-        refresh_token=refresh_token,
-    )
+    await clear_failed_logins(data.email)
+    return await _perform_login(user)
 
 
 @router.post("/login/form", response_model=Token)
-@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+@limiter.limit("10/minute")
 async def login_form(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
     """Login via form (for Swagger UI OAuth2 flow)."""
-    service = UserService(db)
+    if await check_account_locked(form_data.username):
+        raise UnauthorizedError("Account temporarily locked. Try again in 15 minutes.")
 
+    service = UserService(db)
     user = await service.authenticate(form_data.username, form_data.password)
     if not user:
+        await record_failed_login(form_data.username)
         raise UnauthorizedError("Invalid email or password")
 
-    if not user.is_active:
-        raise UnauthorizedError("User is inactive")
-
-    access_token, access_jti = create_access_token(user.id)
-    refresh_token, refresh_jti = create_refresh_token(user.id)
-
-    # Store access token in Redis
-    await store_access_token(
-        user_id=user.id,
-        jti=access_jti,
-        expires_in_seconds=_get_access_token_ttl_seconds(),
-    )
-
-    # Store refresh token in Redis
-    await store_refresh_token(
-        user_id=user.id,
-        jti=refresh_jti,
-        expires_in_seconds=_get_refresh_token_ttl_seconds(),
-    )
-
-    return Token(
-        access_token=access_token,
-        refresh_token=refresh_token,
-    )
+    await clear_failed_logins(form_data.username)
+    return await _perform_login(user)
 
 
 @router.post("/refresh", response_model=Token)
-@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+@limiter.limit("30/minute")
 async def refresh_token_endpoint(
     request: Request,
     data: RefreshRequest,
@@ -206,12 +193,13 @@ async def refresh_token_endpoint(
 
 
 @router.post("/logout", response_model=LogoutResponse)
-@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+@limiter.limit("30/minute")
 async def logout(
     request: Request,
     data: LogoutRequest,
+    current_user: User = Depends(get_current_user),
 ):
-    """Logout and revoke all tokens for the user."""
+    """Logout and revoke all tokens for the authenticated user."""
     payload = decode_token(data.refresh_token)
 
     if not payload or payload.get("type") != "refresh":
@@ -222,11 +210,15 @@ async def logout(
     if not jti or not user_id:
         raise UnauthorizedError("Invalid token payload")
 
+    # Verify the refresh token belongs to the authenticated user
+    if int(user_id) != current_user.id:
+        raise UnauthorizedError("Token does not belong to current user")
+
     # Revoke the refresh token
     await revoke_token(jti)
 
     # Revoke all access tokens for this user
-    await revoke_all_user_access_tokens(int(user_id))
+    await revoke_all_user_access_tokens(current_user.id)
 
     return LogoutResponse()
 

@@ -1,7 +1,9 @@
 import os
 from typing import TYPE_CHECKING, AsyncGenerator
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
+import fakeredis
+import fakeredis.aioredis
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -10,83 +12,34 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 os.environ["SECRET_KEY"] = "test-secret-key-must-be-at-least-32-characters-long"
 os.environ["REDIS_URL"] = "memory://"
 
-
-class AsyncIterator:
-    """Async iterator for mocking redis.scan_iter."""
-
-    def __init__(self, items):
-        self.items = iter(items)
-
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        try:
-            return next(self.items)
-        except StopIteration as err:
-            raise StopAsyncIteration from err
-
-
-# Stateful Redis mock for proper token tracking
-class FakeRedisStore:
-    """Stateful fake Redis for testing token storage/revocation."""
-
-    def __init__(self):
-        self.store: dict[str, str] = {}
-
-    def clear(self):
-        self.store.clear()
-
-    async def setex(self, key: str, ttl: int, value: str) -> bool:
-        self.store[key] = value
-        return True
-
-    async def get(self, key: str) -> str | None:
-        return self.store.get(key)
-
-    async def exists(self, key: str) -> int:
-        return 1 if key in self.store else 0
-
-    async def delete(self, *keys: str) -> int:
-        count = 0
-        for key in keys:
-            if key in self.store:
-                del self.store[key]
-                count += 1
-        return count
-
-    def scan_iter(self, pattern: str):
-        import fnmatch
-
-        matching = [k for k in self.store.keys() if fnmatch.fnmatch(k, pattern)]
-        return AsyncIterator(matching)
-
-    async def close(self):
-        pass
-
-
-_fake_redis_store = FakeRedisStore()
-
-# Create a fake redis client that delegates to the store
-_fake_redis_client = MagicMock()
-_fake_redis_client.setex = AsyncMock(side_effect=_fake_redis_store.setex)
-_fake_redis_client.get = AsyncMock(side_effect=_fake_redis_store.get)
-_fake_redis_client.exists = AsyncMock(side_effect=_fake_redis_store.exists)
-_fake_redis_client.delete = AsyncMock(side_effect=_fake_redis_store.delete)
-_fake_redis_client.scan_iter = MagicMock(side_effect=_fake_redis_store.scan_iter)
-_fake_redis_client.close = AsyncMock(side_effect=_fake_redis_store.close)
+# Shared FakeServer holds state; each get_redis() call creates a fresh client
+# bound to the current event loop (avoids pytest-asyncio loop mismatch).
+_fake_server = fakeredis.FakeServer()
 
 
 async def _mock_get_redis():
-    return _fake_redis_client
+    return fakeredis.aioredis.FakeRedis(server=_fake_server, decode_responses=True)
 
 
 # Patch Redis at the module level before any imports
 _redis_patcher = patch("app.core.redis.get_redis", _mock_get_redis)
 _redis_patcher.start()
 
-# Also patch where it's imported in security.py
+# Also patch where it's imported in other modules
 patch("app.core.security.get_redis", _mock_get_redis).start()
+
+
+async def _mock_stream_get_redis_unavailable():
+    """Simulate Redis unavailable for stream operations.
+
+    Most tests need events written to Postgres (via fallback), not the stream.
+    Stream-specific tests can override this by patching app.core.stream.get_redis
+    with _mock_get_redis locally.
+    """
+    raise ConnectionError("Redis stream not available in tests")
+
+
+patch("app.core.stream.get_redis", _mock_stream_get_redis_unavailable).start()
 
 # Test database URL (use SQLite for tests)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
@@ -101,10 +54,15 @@ if TYPE_CHECKING:
 
 @pytest.fixture(autouse=True)
 async def setup_database():
+    from app.core.limiter import limiter
     from app.db.base import Base
 
-    # Clear Redis store for each test
-    _fake_redis_store.clear()
+    # Disable rate limiting in tests — limits are tested explicitly where needed
+    limiter.enabled = False
+
+    # Clear fakeredis for each test
+    r = fakeredis.aioredis.FakeRedis(server=_fake_server, decode_responses=True)
+    await r.flushall()
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
