@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics SDK Demo</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; background: #f8fafc; color: #1e293b; }
+        h1 { margin-bottom: 0.5rem; }
+        .subtitle { color: #64748b; margin-bottom: 2rem; }
+        .config { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; }
+        .config label { display: block; font-weight: 600; margin-bottom: 0.25rem; font-size: 0.875rem; }
+        .config input { width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.875rem; margin-bottom: 1rem; }
+        .actions { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+        button { padding: 0.75rem 1.5rem; border: none; border-radius: 6px; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: transform 0.1s; }
+        button:active { transform: scale(0.97); }
+        .btn-blue { background: #3b82f6; color: #fff; }
+        .btn-green { background: #22c55e; color: #fff; }
+        .btn-purple { background: #a855f7; color: #fff; }
+        .btn-orange { background: #f97316; color: #fff; }
+        .btn-red { background: #ef4444; color: #fff; }
+        .log { background: #1e293b; color: #e2e8f0; border-radius: 8px; padding: 1rem; font-family: 'SF Mono', monospace; font-size: 0.8rem; max-height: 300px; overflow-y: auto; }
+        .log-entry { padding: 0.25rem 0; border-bottom: 1px solid #334155; }
+    </style>
+</head>
+<body>
+    <h1>Analytics SDK Demo</h1>
+    <p class="subtitle">Interactive demo of the tracking SDK. Click buttons to fire events.</p>
+
+    <div class="config">
+        <label for="apiKey">Project API Key</label>
+        <input type="text" id="apiKey" placeholder="proj_abc123..." />
+        <label for="apiUrl">API URL</label>
+        <input type="text" id="apiUrl" value="http://localhost:8000" />
+        <button class="btn-blue" onclick="initTracker()">Initialize SDK</button>
+    </div>
+
+    <div class="actions">
+        <button class="btn-blue" onclick="trackEvent('page_view', {path: '/pricing'})">Page View: /pricing</button>
+        <button class="btn-green" onclick="trackEvent('button_click', {button: 'signup_cta'})">Button Click</button>
+        <button class="btn-purple" onclick="trackEvent('form_submit', {form: 'contact'})">Form Submit</button>
+        <button class="btn-orange" onclick="trackEvent('purchase', {amount: 29.99, plan: 'pro'})">Purchase ($29.99)</button>
+        <button class="btn-green" onclick="identifyUser()">Identify User</button>
+        <button class="btn-red" onclick="resetTracker()">Reset / Logout</button>
+    </div>
+
+    <h3 style="margin-bottom: 0.5rem;">Event Log</h3>
+    <div class="log" id="log">
+        <div class="log-entry">--:--:-- Waiting for SDK initialization...</div>
+    </div>
+
+    <script>
+        var sdkLoaded = false;
+
+        function log(msg) {
+            var el = document.getElementById("log");
+            var time = new Date().toLocaleTimeString();
+            var entry = document.createElement("div");
+            entry.className = "log-entry";
+            entry.textContent = time + " " + msg;
+            el.insertBefore(entry, el.firstChild);
+        }
+
+        function initTracker() {
+            var apiKey = document.getElementById("apiKey").value;
+            var apiUrl = document.getElementById("apiUrl").value;
+            if (!apiKey) { alert("Enter an API key first"); return; }
+
+            var script = document.createElement("script");
+            script.src = apiUrl + "/static/sdk.js";
+            script.setAttribute("data-project", apiKey);
+            script.setAttribute("data-api-url", apiUrl);
+            script.onload = function() {
+                sdkLoaded = true;
+                log("SDK Initialized with key: " + apiKey.substring(0, 12) + "...");
+            };
+            script.onerror = function() {
+                log("ERROR: Failed to load SDK - is the API running?");
+            };
+            document.head.appendChild(script);
+        }
+
+        function trackEvent(name, props) {
+            if (!sdkLoaded) { alert("Initialize the SDK first"); return; }
+            window.tracker.event(name, props);
+            log(name + " " + JSON.stringify(props));
+        }
+
+        function identifyUser() {
+            if (!sdkLoaded) { alert("Initialize the SDK first"); return; }
+            var userId = "user_" + Math.floor(Math.random() * 1000);
+            window.tracker.identify(userId, { plan: "pro", source: "demo" });
+            log("$identify as " + userId);
+        }
+
+        function resetTracker() {
+            if (!sdkLoaded) { alert("Initialize the SDK first"); return; }
+            window.tracker.reset();
+            log("reset: cleared user identity and session");
+        }
+    </script>
+</body>
+</html>
