@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { getToken, isAuthenticated } from "@/lib/auth";
+import { isAuthenticated } from "@/lib/auth";
 import { MetricCard } from "@/components/dashboard";
 
 export default function DashboardPage() {
@@ -13,37 +13,37 @@ export default function DashboardPage() {
   const router = useRouter();
   const projectId = Number(params.id);
   const [period, setPeriod] = useState("24h");
-  const token = getToken();
+  const authenticated = isAuthenticated();
 
   useEffect(() => {
-    if (!isAuthenticated()) router.push("/login");
-  }, [router]);
+    if (!authenticated) router.push("/login");
+  }, [router, authenticated]);
 
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
-    queryFn: () => api.getProject(token!, projectId),
-    enabled: !!token,
+    queryFn: () => api.getProject(projectId),
+    enabled: authenticated,
   });
 
   const { data: overview } = useQuery({
     queryKey: ["overview", projectId, period],
-    queryFn: () => api.getOverview(token!, projectId, period),
-    enabled: !!token,
+    queryFn: () => api.getOverview(projectId, period),
+    enabled: authenticated,
     refetchInterval: 30000,
   });
 
   const { data: topEvents } = useQuery({
     queryKey: ["topEvents", projectId, period],
-    queryFn: () => api.getTopEvents(token!, projectId, period),
-    enabled: !!token,
+    queryFn: () => api.getTopEvents(projectId, period),
+    enabled: authenticated,
     refetchInterval: 30000,
   });
 
   const { data: timeseries } = useQuery({
     queryKey: ["timeseries", projectId, period],
     queryFn: () =>
-      api.getTimeseries(token!, projectId, period, period === "24h" ? "hourly" : "daily"),
-    enabled: !!token,
+      api.getTimeseries(projectId, period, period === "24h" ? "hourly" : "daily"),
+    enabled: authenticated,
     refetchInterval: 30000,
   });
 
@@ -108,7 +108,7 @@ export default function DashboardPage() {
                     style={{
                       width: `${Math.max(
                         4,
-                        (point.count / Math.max(...timeseries.data.map((d) => d.count))) * 100
+                        (point.count / Math.max(...timeseries.data.map((d) => d.count))) * 100,
                       )}%`,
                     }}
                   />

@@ -5,14 +5,14 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { getToken, isAuthenticated } from "@/lib/auth";
+import { isAuthenticated } from "@/lib/auth";
 
 export default function SettingsPage() {
   const params = useParams();
   const router = useRouter();
   const queryClient = useQueryClient();
   const projectId = Number(params.id);
-  const token = getToken();
+  const authenticated = isAuthenticated();
 
   const [name, setName] = useState("");
   const [domain, setDomain] = useState("");
@@ -20,13 +20,13 @@ export default function SettingsPage() {
   const [showDelete, setShowDelete] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated()) router.push("/login");
-  }, [router]);
+    if (!authenticated) router.push("/login");
+  }, [router, authenticated]);
 
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
-    queryFn: () => api.getProject(token!, projectId),
-    enabled: !!token,
+    queryFn: () => api.getProject(projectId),
+    enabled: authenticated,
   });
 
   useEffect(() => {
@@ -38,7 +38,7 @@ export default function SettingsPage() {
 
   const updateMutation = useMutation({
     mutationFn: (data: { name?: string; domain?: string }) =>
-      api.updateProject(token!, projectId, data),
+      api.updateProject(projectId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       queryClient.invalidateQueries({ queryKey: ["projects"] });
@@ -46,14 +46,14 @@ export default function SettingsPage() {
   });
 
   const rotateMutation = useMutation({
-    mutationFn: () => api.rotateKey(token!, projectId),
+    mutationFn: () => api.rotateKey(projectId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: () => api.deleteProject(token!, projectId),
+    mutationFn: () => api.deleteProject(projectId),
     onSuccess: () => {
       router.push("/projects");
     },

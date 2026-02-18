@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.config import settings
+from app.core.redis import get_redis
 from app.core.stream import (
     ack_messages,
     ensure_consumer_group,
@@ -46,6 +47,7 @@ def _handle_signal(*_):
 async def _persist_batch(
     session_factory: async_sessionmaker[AsyncSession],
     messages: list[tuple[str, dict[str, str]]],
+    redis_client,
 ) -> list[str]:
     """Parse stream messages and bulk-insert into Postgres.
 
@@ -86,6 +88,7 @@ async def _persist_batch(
                     "timestamp": data.get("timestamp", datetime.now(timezone.utc).isoformat()),
                     "project_id": project_id,
                 },
+                redis=redis_client,
             )
 
         except Exception:
@@ -173,9 +176,12 @@ async def run_worker() -> None:
     engine = create_async_engine(settings.DATABASE_URL)
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+    # Create a dedicated Redis client for this worker process
+    redis_client = await get_redis()
+
     consumer_name = f"worker-{socket.gethostname()}-{os.getpid()}"
 
-    await ensure_consumer_group()
+    await ensure_consumer_group(redis=redis_client)
 
     last_rollup = 0.0
 
@@ -184,11 +190,12 @@ async def run_worker() -> None:
             consumer_name=consumer_name,
             count=BATCH_SIZE,
             block_ms=POLL_INTERVAL_MS,
+            redis=redis_client,
         )
 
         if messages:
-            acked = await _persist_batch(session_factory, messages)
-            await ack_messages(acked)
+            acked = await _persist_batch(session_factory, messages, redis_client)
+            await ack_messages(acked, redis=redis_client)
 
         # Periodic rollup computation
         now_ts = asyncio.get_event_loop().time()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import secrets
 from typing import TYPE_CHECKING
 
@@ -21,7 +22,10 @@ class Project(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    api_key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    # Legacy column — kept nullable for migration; will be dropped in Phase 4.
+    api_key: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
+    api_key_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    api_key_prefix: Mapped[str] = mapped_column(String(10), nullable=False)
     domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
@@ -33,3 +37,8 @@ class Project(Base, TimestampMixin):
     def generate_api_key() -> str:
         """Generate a new API key."""
         return f"proj_{secrets.token_urlsafe(32)}"
+
+    @staticmethod
+    def hash_api_key(api_key: str) -> str:
+        """Return the SHA-256 hex digest of an API key."""
+        return hashlib.sha256(api_key.encode()).hexdigest()

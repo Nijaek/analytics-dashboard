@@ -6,13 +6,13 @@ from app.core.config import settings
 from app.core.limiter import limiter
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
+from app.schemas.project import ProjectCreate, ProjectCreateResponse, ProjectResponse, ProjectUpdate
 from app.services.project_service import ProjectService
 
 router = APIRouter()
 
 
-@router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=ProjectCreateResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def create_project(
     request: Request,
@@ -20,9 +20,11 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create a new project. Returns the project with its API key."""
+    """Create a new project. Returns the project with its full API key (shown once)."""
     service = ProjectService(db)
-    return await service.create(user_id=current_user.id, data=data)
+    project, plaintext_key = await service.create(user_id=current_user.id, data=data)
+    base = ProjectResponse.model_validate(project).model_dump()
+    return ProjectCreateResponse(**base, api_key=plaintext_key)
 
 
 @router.get("/", response_model=list[ProjectResponse])
@@ -78,7 +80,7 @@ async def delete_project(
     return None
 
 
-@router.post("/{project_id}/rotate-key", response_model=ProjectResponse)
+@router.post("/{project_id}/rotate-key", response_model=ProjectCreateResponse)
 @limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
 async def rotate_api_key(
     request: Request,
@@ -86,6 +88,10 @@ async def rotate_api_key(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Rotate the API key for a project."""
+    """Rotate the API key for a project. Returns the new full key (shown once)."""
     service = ProjectService(db)
-    return await service.rotate_api_key(project_id=project_id, user_id=current_user.id)
+    project, plaintext_key = await service.rotate_api_key(
+        project_id=project_id, user_id=current_user.id
+    )
+    base = ProjectResponse.model_validate(project).model_dump()
+    return ProjectCreateResponse(**base, api_key=plaintext_key)

@@ -5,27 +5,27 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { getToken, isAuthenticated } from "@/lib/auth";
+import { isAuthenticated } from "@/lib/auth";
 
 export default function ProjectsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [newName, setNewName] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const token = getToken();
+  const authenticated = isAuthenticated();
 
   useEffect(() => {
-    if (!isAuthenticated()) router.push("/login");
-  }, [router]);
+    if (!authenticated) router.push("/login");
+  }, [router, authenticated]);
 
   const { data: projects, isLoading } = useQuery({
     queryKey: ["projects"],
-    queryFn: () => api.listProjects(token!),
-    enabled: !!token,
+    queryFn: () => api.listProjects(),
+    enabled: authenticated,
   });
 
   const createMutation = useMutation({
-    mutationFn: (name: string) => api.createProject(token!, name),
+    mutationFn: (name: string) => api.createProject(name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       setNewName("");

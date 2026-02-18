@@ -4,11 +4,23 @@ from app.schemas.user import UserCreate
 
 
 class Token(BaseModel):
-    """JWT token response."""
+    """JWT token response (used for form-based login / Swagger UI only)."""
 
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+
+
+class LoginResponse(BaseModel):
+    """Login response — tokens are delivered via HTTP-only cookies."""
+
+    message: str = "Login successful"
+
+
+class RefreshResponse(BaseModel):
+    """Token refresh response — new tokens set via HTTP-only cookies."""
+
+    message: str = "Token refreshed"
 
 
 class TokenPayload(BaseModel):
@@ -33,6 +45,6 @@ class RegisterRequest(UserCreate):
 
 
 class RefreshRequest(BaseModel):
-    """Token refresh request body."""
+    """Token refresh request body (fallback when cookie is unavailable)."""
 
     refresh_token: str

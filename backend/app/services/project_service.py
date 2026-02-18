@@ -12,18 +12,24 @@ class ProjectService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create(self, user_id: int, data: ProjectCreate) -> Project:
-        """Create a new project with auto-generated API key."""
+    async def create(self, user_id: int, data: ProjectCreate) -> tuple[Project, str]:
+        """Create a new project with auto-generated API key.
+
+        Returns (project, plaintext_key). The plaintext key is NOT stored
+        in the database — only the SHA-256 hash is persisted.
+        """
+        plaintext_key = Project.generate_api_key()
         project = Project(
             user_id=user_id,
             name=data.name,
             domain=data.domain,
-            api_key=Project.generate_api_key(),
+            api_key_hash=Project.hash_api_key(plaintext_key),
+            api_key_prefix=plaintext_key[:10],
         )
         self.db.add(project)
         await self.db.flush()
         await self.db.refresh(project)
-        return project
+        return project, plaintext_key
 
     async def get(self, project_id: int, user_id: int) -> Project:
         """Get a project by ID, ensuring it belongs to the user."""
@@ -58,15 +64,26 @@ class ProjectService:
         await self.db.delete(project)
         await self.db.flush()
 
-    async def rotate_api_key(self, project_id: int, user_id: int) -> Project:
-        """Rotate the API key for a project."""
+    async def rotate_api_key(self, project_id: int, user_id: int) -> tuple[Project, str]:
+        """Rotate the API key for a project.
+
+        Returns (project, plaintext_key). Old key is irrecoverable.
+        """
         project = await self.get(project_id, user_id)
-        project.api_key = Project.generate_api_key()
+        plaintext_key = Project.generate_api_key()
+        project.api_key = None  # Clear legacy plaintext column
+        project.api_key_hash = Project.hash_api_key(plaintext_key)
+        project.api_key_prefix = plaintext_key[:10]
         await self.db.flush()
         await self.db.refresh(project)
-        return project
+        return project, plaintext_key
 
     async def get_by_api_key(self, api_key: str) -> Project | None:
-        """Get a project by its API key (for event ingestion)."""
-        result = await self.db.execute(select(Project).where(Project.api_key == api_key))
+        """Look up a project by API key via SHA-256 hash comparison.
+
+        Hashes the incoming key and queries by hash — the plaintext is
+        never stored or compared directly.
+        """
+        key_hash = Project.hash_api_key(api_key)
+        result = await self.db.execute(select(Project).where(Project.api_key_hash == key_hash))
         return result.scalar_one_or_none()

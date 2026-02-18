@@ -11,8 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # Set test env vars before importing app modules
 os.environ["SECRET_KEY"] = "test-secret-key-must-be-at-least-32-characters-long"
 os.environ["REDIS_URL"] = "memory://"
+os.environ["COOKIE_SECURE"] = "false"  # httpx test client uses http://, not https://
 
-# Shared FakeServer holds state; each get_redis() call creates a fresh client
+# Shared FakeServer holds state; each call creates a fresh client
 # bound to the current event loop (avoids pytest-asyncio loop mismatch).
 _fake_server = fakeredis.FakeServer()
 
@@ -21,14 +22,12 @@ async def _mock_get_redis():
     return fakeredis.aioredis.FakeRedis(server=_fake_server, decode_responses=True)
 
 
-# Patch Redis at the module level before any imports
+# Patch the module-level get_redis() used as fallback in non-DI contexts
 _redis_patcher = patch("app.core.redis.get_redis", _mock_get_redis)
 _redis_patcher.start()
 
-# Also patch where it's imported in other modules
-patch("app.core.security.get_redis", _mock_get_redis).start()
-
-
+# Patch stream's fallback path (stream functions fall back to get_redis when no
+# redis kwarg is passed — this keeps stream ops unavailable by default in tests)
 async def _mock_stream_get_redis_unavailable():
     """Simulate Redis unavailable for stream operations.
 
@@ -52,6 +51,11 @@ if TYPE_CHECKING:
     pass
 
 
+def _make_fake_redis():
+    """Create a fakeredis instance bound to the shared server."""
+    return fakeredis.aioredis.FakeRedis(server=_fake_server, decode_responses=True)
+
+
 @pytest.fixture(autouse=True)
 async def setup_database():
     from app.core.limiter import limiter
@@ -72,6 +76,12 @@ async def setup_database():
 
 
 @pytest.fixture
+async def fake_redis():
+    """Provide a fakeredis instance for direct use in tests."""
+    return _make_fake_redis()
+
+
+@pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with TestingSessionLocal() as session:
         yield session
@@ -79,13 +89,21 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
 @pytest.fixture
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    from app.core.redis import get_redis_dep
     from app.db.session import get_db
     from app.main import app
 
     async def override_get_db():
         yield db_session
 
+    async def override_get_redis_dep():
+        return _make_fake_redis()
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_redis_dep] = override_get_redis_dep
+
+    # Also set app.state.redis for WebSocket handler (which reads it directly)
+    app.state.redis = _make_fake_redis()
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -118,7 +136,8 @@ async def auth_headers(test_user) -> dict:
     from app.core.security import create_access_token, store_access_token
 
     token, jti = create_access_token(subject=test_user.id)
-    # Store the access token in Redis so it passes revocation check
+    # store_access_token uses redis kwarg; when None it falls back to
+    # the patched get_redis() which returns fakeredis.
     await store_access_token(
         user_id=test_user.id,
         jti=jti,
@@ -153,7 +172,7 @@ async def superuser_headers(superuser) -> dict:
     from app.core.security import create_access_token, store_access_token
 
     token, jti = create_access_token(subject=superuser.id)
-    # Store the access token in Redis so it passes revocation check
+    # Falls back to patched get_redis() for fakeredis
     await store_access_token(
         user_id=superuser.id,
         jti=jti,

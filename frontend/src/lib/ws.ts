@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { api } from "./api";
+
 export interface LiveEvent {
   id: string;
   event_name: string;
@@ -22,22 +24,45 @@ const MAX_DELAY_MS = 30000;
 
 let eventCounter = 0;
 
-export function useLiveEvents(projectId: number, token: string | null) {
+export function useLiveEvents(projectId: number) {
   const [events, setEvents] = useState<LiveEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const retriesRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const connect = useCallback(() => {
-    if (!token || !projectId) return;
+  const scheduleRetry = useCallback(() => {
+    if (retriesRef.current < MAX_RETRIES) {
+      const delay = Math.min(
+        BASE_DELAY_MS * Math.pow(2, retriesRef.current),
+        MAX_DELAY_MS,
+      );
+      retriesRef.current += 1;
+      timerRef.current = setTimeout(() => {
+        void connect();
+      }, delay);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- connect is stable via ref pattern
+
+  const connect = useCallback(async () => {
+    if (!projectId) return;
 
     if (wsRef.current) {
       wsRef.current.close();
     }
 
+    let ticket: string;
+    try {
+      const resp = await api.getWsTicket();
+      ticket = resp.ticket;
+    } catch {
+      // Ticket fetch failed (e.g. not authenticated) — schedule retry
+      scheduleRetry();
+      return;
+    }
+
     const ws = new WebSocket(
-      `${WS_URL}/api/v1/ws/events/${projectId}?token=${token}`
+      `${WS_URL}/api/v1/ws/events/${projectId}?ticket=${ticket}`,
     );
 
     ws.onopen = () => {
@@ -47,14 +72,7 @@ export function useLiveEvents(projectId: number, token: string | null) {
 
     ws.onclose = () => {
       setConnected(false);
-      if (retriesRef.current < MAX_RETRIES) {
-        const delay = Math.min(
-          BASE_DELAY_MS * Math.pow(2, retriesRef.current),
-          MAX_DELAY_MS
-        );
-        retriesRef.current += 1;
-        timerRef.current = setTimeout(connect, delay);
-      }
+      scheduleRetry();
     };
 
     ws.onerror = () => {
@@ -75,10 +93,10 @@ export function useLiveEvents(projectId: number, token: string | null) {
     };
 
     wsRef.current = ws;
-  }, [projectId, token]);
+  }, [projectId, scheduleRetry]);
 
   useEffect(() => {
-    connect();
+    void connect();
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
       wsRef.current?.close();

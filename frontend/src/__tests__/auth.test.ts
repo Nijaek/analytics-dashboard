@@ -1,70 +1,59 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 
-// Create a proper localStorage mock before importing auth module
-const store: Record<string, string> = {};
-const localStorageMock = {
-  getItem: vi.fn((key: string) => store[key] ?? null),
-  setItem: vi.fn((key: string, value: string) => {
-    store[key] = value;
-  }),
-  removeItem: vi.fn((key: string) => {
-    delete store[key];
-  }),
-  clear: vi.fn(() => {
-    for (const key of Object.keys(store)) {
-      delete store[key];
-    }
-  }),
-  get length() {
-    return Object.keys(store).length;
-  },
-  key: vi.fn((index: number) => Object.keys(store)[index] ?? null),
-};
+// We need to control document.cookie for testing
+const originalDescriptor = Object.getOwnPropertyDescriptor(document, "cookie");
 
-Object.defineProperty(globalThis, "localStorage", {
-  value: localStorageMock,
-  writable: true,
-});
+import { isAuthenticated, clearTokens } from "@/lib/auth";
 
-import { getToken, setTokens, isAuthenticated, clearTokens } from "@/lib/auth";
+describe("auth helpers (cookie-based)", () => {
+  let cookieStore: Record<string, string> = {};
 
-describe("auth helpers", () => {
   beforeEach(() => {
-    for (const key of Object.keys(store)) {
-      delete store[key];
+    cookieStore = {};
+    Object.defineProperty(document, "cookie", {
+      get: () =>
+        Object.entries(cookieStore)
+          .map(([k, v]) => `${k}=${v}`)
+          .join("; "),
+      set: (value: string) => {
+        const [pair] = value.split(";");
+        const [key, val] = pair.split("=");
+        if (value.includes("max-age=0")) {
+          delete cookieStore[key.trim()];
+        } else {
+          cookieStore[key.trim()] = val?.trim() ?? "";
+        }
+      },
+      configurable: true,
+    });
+  });
+
+  afterEach(() => {
+    // Restore original cookie descriptor
+    if (originalDescriptor) {
+      Object.defineProperty(document, "cookie", originalDescriptor);
     }
-    vi.clearAllMocks();
   });
 
-  it("getToken returns null when no token set", () => {
-    expect(getToken()).toBeNull();
-  });
-
-  it("setTokens stores access and refresh tokens", () => {
-    setTokens("access123", "refresh456");
-    expect(store["analytics_token"]).toBe("access123");
-    expect(store["analytics_refresh"]).toBe("refresh456");
-  });
-
-  it("getToken returns stored access token", () => {
-    setTokens("mytoken", "myrefresh");
-    expect(getToken()).toBe("mytoken");
-  });
-
-  it("isAuthenticated returns false when no token", () => {
+  it("isAuthenticated returns false when no logged_in cookie", () => {
     expect(isAuthenticated()).toBe(false);
   });
 
-  it("isAuthenticated returns true when token exists", () => {
-    setTokens("tok", "ref");
+  it("isAuthenticated returns true when logged_in cookie exists", () => {
+    cookieStore["logged_in"] = "true";
     expect(isAuthenticated()).toBe(true);
   });
 
-  it("clearTokens removes both tokens", () => {
-    setTokens("tok", "ref");
+  it("clearTokens removes the logged_in cookie", () => {
+    cookieStore["logged_in"] = "true";
+    expect(isAuthenticated()).toBe(true);
     clearTokens();
-    expect(getToken()).toBeNull();
-    expect(store["analytics_refresh"]).toBeUndefined();
+    expect(isAuthenticated()).toBe(false);
+  });
+
+  it("isAuthenticated is false after clearTokens", () => {
+    cookieStore["logged_in"] = "true";
+    clearTokens();
     expect(isAuthenticated()).toBe(false);
   });
 });

@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # Cookie settings
+    COOKIE_DOMAIN: str | None = None  # None = current domain
+    COOKIE_SECURE: bool = True  # Set to False for local dev (HTTP)
+    COOKIE_SAMESITE: str = "lax"  # "lax" for CSRF protection
+    COOKIE_PATH: str = "/"
+
     # CORS - empty by default, must be explicitly configured
     CORS_ORIGINS: list[str] = []
 

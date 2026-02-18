@@ -1,8 +1,10 @@
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import UnauthorizedError
+from app.core.redis import get_redis_dep
 from app.core.security import decode_token, is_access_token_revoked
 from app.db.session import get_db
 from app.models.project import Project
@@ -10,14 +12,33 @@ from app.models.user import User
 from app.services.project_service import ProjectService
 from app.services.user_service import UserService
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login/form")
+# Keep oauth2_scheme at module level for Swagger UI support
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login/form", auto_error=False)
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis_dep),
 ) -> User:
-    """Dependency to get the current authenticated user from JWT token."""
+    """Dependency to get the current authenticated user from JWT token.
+
+    Checks for token in this order:
+    1. access_token HTTP-only cookie
+    2. Authorization: Bearer <token> header
+    """
+    # Try cookie first
+    token = request.cookies.get("access_token")
+
+    # Fall back to Authorization header
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+
+    if not token:
+        raise UnauthorizedError("Not authenticated")
+
     payload = decode_token(token)
 
     if not payload:
@@ -32,7 +53,7 @@ async def get_current_user(
         raise UnauthorizedError("Invalid token payload")
 
     # Check if access token has been revoked
-    if await is_access_token_revoked(jti):
+    if await is_access_token_revoked(jti, redis=redis):
         raise UnauthorizedError("Token has been revoked")
 
     service = UserService(db)

@@ -50,6 +50,8 @@ async def ingest_events(
         )
 
     # Try atomic Redis pipeline — all-or-nothing
+    # Stream operations use their own Redis connection (not DI) so the worker
+    # and tests can manage stream availability independently.
     msg_ids = await push_event_batch_to_stream(project.id, events_data)
     if msg_ids is not None:
         return EventIngestResponse(accepted=len(msg_ids))

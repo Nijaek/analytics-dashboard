@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from app.api.v1.router import api_router
 from app.core.config import settings, setup_logging
 from app.core.limiter import limiter
-from app.core.redis import close_redis
+from app.core.redis import close_redis, create_redis_client
 from app.db.session import AsyncSessionLocal, engine
 
 
@@ -22,8 +22,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
     # Expose session maker for WebSocket auth
     app.state._db_sessionmaker = AsyncSessionLocal
+    # Create managed Redis client for DI
+    app.state.redis = create_redis_client()
     yield
     # Shutdown
+    await app.state.redis.close()
     await close_redis()
     await engine.dispose()
 

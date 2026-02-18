@@ -3,12 +3,11 @@ import json
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from sqlalchemy.ext.asyncio import AsyncSession
+from redis.asyncio import Redis
 
-from app.core.security import decode_token, is_access_token_revoked
+from app.core.security import validate_ws_ticket
 from app.core.stream import subscribe_project
 from app.services.project_service import ProjectService
-from app.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 
@@ -50,30 +49,12 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-async def _authenticate_ws(token: str, db: AsyncSession) -> int | None:
-    """Authenticate WebSocket connection, returns user_id or None."""
-    payload = decode_token(token)
-    if not payload or payload.get("type") != "access":
-        return None
-    user_id = payload.get("sub")
-    jti = payload.get("jti")
-    if not user_id or not jti:
-        return None
-    if await is_access_token_revoked(jti):
-        return None
-    service = UserService(db)
-    user = await service.get(int(user_id))
-    if not user or not user.is_active:
-        return None
-    return user.id
-
-
-async def _listen_pubsub(project_id: int, websocket: WebSocket) -> None:
+async def _listen_pubsub(project_id: int, websocket: WebSocket, redis: Redis) -> None:
     """Subscribe to Redis pub/sub and forward messages to WebSocket.
 
     Silently exits if Redis pub/sub is unavailable (falls back to in-memory only).
     """
-    pubsub, channel = await subscribe_project(project_id)
+    pubsub, channel = await subscribe_project(project_id, redis=redis)
     if pubsub is None:
         # Redis pub/sub unavailable — rely on in-memory broadcast only
         logger.debug("Redis pub/sub unavailable for project %d, using in-memory only", project_id)
@@ -103,26 +84,31 @@ async def _listen_pubsub(project_id: int, websocket: WebSocket) -> None:
 async def websocket_events(
     websocket: WebSocket,
     project_id: int,
-    token: str | None = None,
+    ticket: str | None = None,
 ):
     """WebSocket endpoint for live event streaming.
 
-    Connect with: ws://host/api/v1/ws/events/{project_id}?token=<jwt>
+    Connect with: ws://host/api/v1/ws/events/{project_id}?ticket=<ticket>
 
-    Uses Redis pub/sub for cross-process fan-out when available,
-    with in-memory ConnectionManager as fallback.
+    Uses short-lived single-use tickets (issued via POST /auth/ws-ticket)
+    instead of JWTs in the query string. Redis pub/sub for cross-process
+    fan-out when available, with in-memory ConnectionManager as fallback.
     """
-    if not token:
-        await websocket.close(code=4001, reason="Missing token")
+    if not ticket:
+        await websocket.close(code=4001, reason="Missing ticket")
         return
 
-    async with websocket.app.state._db_sessionmaker() as db:  # type: ignore[union-attr]
-        user_id = await _authenticate_ws(token, db)
-        if user_id is None:
-            await websocket.close(code=4001, reason="Invalid token")
-            return
+    # Get Redis from app.state (same as DI but manual for WebSocket)
+    redis: Redis = websocket.app.state.redis  # type: ignore[assignment]
 
-        # Verify project access
+    # Validate and consume the ticket (single-use)
+    user_id = await validate_ws_ticket(ticket, redis=redis)
+    if user_id is None:
+        await websocket.close(code=4001, reason="Invalid or expired ticket")
+        return
+
+    # Verify project access
+    async with websocket.app.state._db_sessionmaker() as db:  # type: ignore[union-attr]
         project_service = ProjectService(db)
         try:
             await project_service.get(project_id=project_id, user_id=user_id)
@@ -133,7 +119,7 @@ async def websocket_events(
     await manager.connect(project_id, websocket)
 
     # Start pub/sub listener as a background task
-    pubsub_task = asyncio.create_task(_listen_pubsub(project_id, websocket))
+    pubsub_task = asyncio.create_task(_listen_pubsub(project_id, websocket, redis))
 
     try:
         while True:

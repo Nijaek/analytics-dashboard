@@ -18,14 +18,20 @@ class ProjectUpdate(BaseModel):
 
 
 class ProjectResponse(BaseModel):
-    """Schema for project response."""
+    """Standard project response — shows key prefix only."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     name: str
-    api_key: str
+    api_key_prefix: str
     domain: str | None
     user_id: int
     created_at: datetime
     updated_at: datetime
+
+
+class ProjectCreateResponse(ProjectResponse):
+    """Response for create/rotate — includes full plaintext key (shown once)."""
+
+    api_key: str

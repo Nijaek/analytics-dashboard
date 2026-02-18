@@ -17,6 +17,7 @@ async def test_create_project(client: AsyncClient, auth_headers: dict):
     assert data["name"] == "My Website"
     assert data["domain"] == "example.com"
     assert data["api_key"].startswith("proj_")
+    assert data["api_key_prefix"] == data["api_key"][:10]
     assert "id" in data
 
 
@@ -63,6 +64,11 @@ async def test_list_projects(client: AsyncClient, auth_headers: dict):
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2
+    # List responses show prefix only, not full key
+    for project in data:
+        assert "api_key" not in project
+        assert project["api_key_prefix"] is not None
+        assert project["api_key_prefix"].startswith("proj_")
 
 
 @pytest.mark.asyncio
@@ -77,7 +83,11 @@ async def test_get_project(client: AsyncClient, auth_headers: dict):
 
     response = await client.get(f"/api/v1/projects/{project_id}", headers=auth_headers)
     assert response.status_code == 200
-    assert response.json()["name"] == "Test Project"
+    data = response.json()
+    assert data["name"] == "Test Project"
+    # Get response shows prefix only
+    assert "api_key" not in data
+    assert data["api_key_prefix"] is not None
 
 
 @pytest.mark.asyncio
@@ -114,8 +124,12 @@ async def test_update_project(client: AsyncClient, auth_headers: dict):
         json={"name": "Updated Name", "domain": "new.example.com"},
     )
     assert response.status_code == 200
-    assert response.json()["name"] == "Updated Name"
-    assert response.json()["domain"] == "new.example.com"
+    data = response.json()
+    assert data["name"] == "Updated Name"
+    assert data["domain"] == "new.example.com"
+    # Update response shows prefix only
+    assert "api_key" not in data
+    assert data["api_key_prefix"] is not None
 
 
 @pytest.mark.asyncio
@@ -153,9 +167,11 @@ async def test_rotate_api_key(client: AsyncClient, auth_headers: dict):
         headers=auth_headers,
     )
     assert response.status_code == 200
-    new_key = response.json()["api_key"]
+    rotate_data = response.json()
+    new_key = rotate_data["api_key"]
     assert new_key != old_key
     assert new_key.startswith("proj_")
+    assert rotate_data["api_key_prefix"] == new_key[:10]
 
 
 @pytest.mark.asyncio

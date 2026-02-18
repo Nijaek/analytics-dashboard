@@ -2,8 +2,8 @@
 
 import { useLiveEvents } from "@/lib/ws";
 
-export function EventFeed({ projectId, token }: { projectId: number; token: string | null }) {
-  const { events, connected } = useLiveEvents(projectId, token);
+export function EventFeed({ projectId }: { projectId: number }) {
+  const { events, connected } = useLiveEvents(projectId);
 
   return (
     <div className="border rounded-lg p-4">

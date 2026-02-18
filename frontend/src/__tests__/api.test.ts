@@ -11,6 +11,7 @@ describe("api client", () => {
     expect(typeof api.login).toBe("function");
     expect(typeof api.register).toBe("function");
     expect(typeof api.getMe).toBe("function");
+    expect(typeof api.logout).toBe("function");
   });
 
   it("has project methods", () => {

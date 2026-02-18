@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { api } from "@/lib/api";
-import { setTokens } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,8 +17,8 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const data = await api.login(email, password);
-      setTokens(data.access_token, data.refresh_token);
+      await api.login(email, password);
+      // Cookies are set automatically by the backend response
       router.push("/projects");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");
