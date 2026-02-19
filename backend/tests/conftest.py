@@ -26,6 +26,7 @@ async def _mock_get_redis():
 _redis_patcher = patch("app.core.redis.get_redis", _mock_get_redis)
 _redis_patcher.start()
 
+
 # Patch stream's fallback path (stream functions fall back to get_redis when no
 # redis kwarg is passed — this keeps stream ops unavailable by default in tests)
 async def _mock_stream_get_redis_unavailable():

@@ -148,9 +148,7 @@ async def test_sessions(client: AsyncClient, auth_headers: dict, project_with_ev
 
 
 @pytest.mark.asyncio
-async def test_users_analytics(
-    client: AsyncClient, auth_headers: dict, project_with_events: dict
-):
+async def test_users_analytics(client: AsyncClient, auth_headers: dict, project_with_events: dict):
     """Test users analytics endpoint."""
     project_id = project_with_events["id"]
     response = await client.get(
