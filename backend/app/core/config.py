@@ -1,6 +1,7 @@
 import logging
 import sys
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -34,7 +35,7 @@ class Settings(BaseSettings):
     # Cookie settings
     COOKIE_DOMAIN: str | None = None  # None = current domain
     COOKIE_SECURE: bool = True  # Set to False for local dev (HTTP)
-    COOKIE_SAMESITE: str = "lax"  # "lax" for CSRF protection
+    COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
     COOKIE_PATH: str = "/"
 
     # CORS - empty by default, must be explicitly configured
