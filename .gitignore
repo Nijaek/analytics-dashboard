@@ -61,5 +61,6 @@ uv.lock
 AGENTS.md
 CLAUDE.md
 
-# Docs (generated plans, etc.)
-docs/
+# Docs (generated plans, etc. — only ARCHITECTURE.md is committed)
+docs/*
+!docs/ARCHITECTURE.md
